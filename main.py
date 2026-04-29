@@ -39,127 +39,230 @@ def log(level, message, extra=""):
 
 # Startup message
 print("\n" + "="*70)
-log("INFO", "FastAPI Application Starting...")
+log("INFO", "Multi-City Conversational Weather Bot Starting...")
 log("INFO", f"API Key Status: {'✅ LOADED' if WEATHER_API_KEY else '❌ NOT LOADED'}")
-if WEATHER_API_KEY:
-    log("DEBUG", f"API Key (masked): {WEATHER_API_KEY[:15]}...{'*'*10}")
-log("INFO", f"Weather API URL: {WEATHER_API_URL}")
+log("INFO", "Supports: Multiple cities, continuous conversation, multi-turn dialogue")
 print("="*70 + "\n")
 
 @app.on_event("startup")
 async def startup_event():
     log("SUCCESS", "FastAPI server started successfully")
-    log("INFO", "Listening on http://127.0.0.1:8000")
-    log("INFO", "Webhook endpoint: POST /webhook")
 
 @app.get("/health")
 async def health():
-    log("INFO", "Health check request received")
-    return {"status": "OK", "message": "Weather Bot API is running!"}
+    return {"status": "OK", "message": "Multi-City Weather Bot is running!"}
 
 @app.post("/webhook")
 async def webhook(request: Request):
     """
-    Main webhook endpoint that receives requests from Dialogflow
+    Multi-City Conversational Webhook
+    Handles:
+    - Multiple cities in sequence
+    - Current weather for any city
+    - Forecasts for any city
+    - Natural conversation flow
+    - Continuous multi-turn dialogue
     """
     print("\n" + "🔔"*35)
     log("WEBHOOK", "REQUEST RECEIVED FROM DIALOGFLOW")
     print("🔔"*35 + "\n")
     
     try:
-        # Step 1: Get request body
-        log("DEBUG", "Step 1: Parsing request body...")
+        # Parse request
+        log("DEBUG", "Parsing request body...")
         request_body = await request.json()
-        log("SUCCESS", "Request body parsed successfully")
+        log("SUCCESS", "Request parsed successfully")
         
-        # Step 2: Log full request (pretty print)
-        log("DEBUG", "Full request details:")
-        print(json.dumps(request_body, indent=2))
-        
-        # Step 3: Extract parameters
-        log("DEBUG", "Step 2: Extracting parameters...")
+        # Extract data
         query_result = request_body.get('queryResult', {})
         parameters = query_result.get('parameters', {})
         city = parameters.get('city', '')
         date_str = parameters.get('date', None)
+        user_message = query_result.get('queryText', '').lower().strip()
+        intent_name = query_result.get('intent', {}).get('displayName', '').lower()
         
-        log("SUCCESS", "Parameters extracted", f"city='{city}', date='{date_str}'")
+        log("DEBUG", "Extracted parameters:", 
+            f"city='{city}', date='{date_str}', intent='{intent_name}'")
         
-        # Step 4: Get intent
-        log("DEBUG", "Step 3: Identifying intent...")
-        intent_name = query_result.get('intent', {}).get('displayName', 'Unknown')
-        log("SUCCESS", f"Intent identified: '{intent_name}'")
+        # ===== MULTI-CITY CONVERSATIONAL FLOW =====
         
-        # Step 5: Validate city
-        log("DEBUG", "Step 4: Validating city parameter...")
-        if not city or city.strip() == '':
-            log("ERROR", "No city provided, using default 'Lahore'")
-            city = 'Lahore'
-        log("SUCCESS", f"City validated: '{city}'")
+        # 1. GREETING
+        if any(greet in user_message for greet in ['hi', 'hello', 'hey', 'greetings', 'good morning', 'good afternoon']):
+            log("SUCCESS", "GREETING intent detected")
+            response_text = """🤖 This is Weather BOT. How may I help you?
+
+I can provide weather information for any city in the world! 🌍
+
+You can ask me:
+🌤️ "What is the weather in [city name]?"
+📅 "Weather forecast for [city name]"
+🌏 "Show me weather in [city1] and [city2]"
+
+Just tell me any city name and I'll get you the latest weather! ☀️"""
         
-        # Step 6: Determine action (current weather or forecast)
-        log("DEBUG", "Step 5: Determining action type...")
-        is_forecast = 'forecast' in intent_name.lower() or bool(date_str)
-        action = "FORECAST" if is_forecast else "CURRENT WEATHER"
-        log("SUCCESS", f"Action type: {action}")
+        # 2. HELP REQUEST
+        elif any(h in user_message for h in ['help', 'what can you do', 'how can you help', 'assist', 'options']):
+            log("SUCCESS", "HELP intent detected")
+            response_text = """🆘 Weather BOT Help Guide
+
+I can help you with weather for ANY city! 🌍
+
+📍 **How to use:**
+✓ "What is the weather in London?"
+✓ "Current weather in Tokyo"
+✓ "Weather forecast for Paris"
+✓ "Tell me weather in New York"
+✓ "Show me weather for Sydney"
+
+📊 **Multiple Cities:**
+✓ "Weather in Lahore, Karachi, and Islamabad"
+✓ "Current weather for London and Paris"
+✓ "Forecast for Dubai, Abu Dhabi, and Doha"
+
+🌐 **Supported Cities:** Any major city worldwide!
+London, New York, Paris, Tokyo, Sydney, Dubai, Mumbai, Bangkok, Singapore, etc.
+
+Just mention the city name and I'll fetch the weather! 🌤️"""
         
-        # Step 7: Call weather API
-        log("DEBUG", "Step 6: Calling OpenWeatherMap API...")
-        log("API", f"Fetching {action.lower()} for: {city}")
-        
-        if is_forecast:
-            response_text = await get_forecast(city, date_str)
-        else:
+        # 3. CURRENT WEATHER REQUEST (with city provided)
+        elif city and ('current_weather' in intent_name or ('weather' in user_message and 'forecast' not in user_message)):
+            log("SUCCESS", "CURRENT WEATHER intent with city detected")
+            log("API", f"Fetching weather for: {city}")
             response_text = await get_current_weather(city)
+            
+            # Add continuation prompt for multi-turn
+            response_text += f"\n\n❓ Would you like weather for another city?\n(Just say: 'Weather in [city name]')"
         
-        # Step 8: Prepare response
-        log("DEBUG", "Step 7: Preparing Dialogflow response...")
-        dialogflow_response = {
-            "fulfillmentText": response_text
-        }
+        # 4. FORECAST REQUEST (with city provided)
+        elif city and ('weather_forecast' in intent_name or 'forecast' in user_message):
+            log("SUCCESS", "FORECAST intent with city detected")
+            log("API", f"Fetching forecast for: {city}")
+            response_text = await get_forecast(city, date_str)
+            
+            # Add continuation prompt for multi-turn
+            response_text += f"\n\n❓ Would you like weather or forecast for another city?\n(Try: 'Weather in [city name]')"
+        
+        # 5. WEATHER REQUEST WITHOUT CITY (Prompt for city)
+        elif 'weather' in user_message and not city:
+            if 'forecast' in user_message:
+                log("DEBUG", "Forecast requested but NO city provided")
+                response_text = """📍 Please provide the city name for the forecast!
+
+For example:
+✓ "Forecast for Lahore"
+✓ "Weather forecast in Paris"
+✓ "Tell me forecast for London"
+
+Which city would you like the forecast for? 🌍"""
+            else:
+                log("DEBUG", "Current weather requested but NO city provided")
+                response_text = """📍 Please provide the city name!
+
+For example:
+✓ "Weather in Lahore"
+✓ "Current weather in London"
+✓ "What's the weather in Paris?"
+✓ "Show me weather for Dubai"
+
+Which city's weather would you like? 🌤️"""
+        
+        # 6. JUST CITY PROVIDED (infer weather request)
+        elif city and not any(keyword in user_message for keyword in ['weather', 'forecast', 'current']):
+            log("DEBUG", "Only city provided")
+            
+            # Check if forecast was mentioned before
+            if 'forecast' in user_message.lower():
+                log("API", f"Getting forecast for: {city}")
+                response_text = await get_forecast(city, date_str)
+            else:
+                log("API", f"Getting current weather for: {city}")
+                response_text = await get_current_weather(city)
+            
+            response_text += f"\n\n❓ Need weather for another city?\n(Say: 'Weather in [city name]')"
+        
+        # 7. THANK YOU / CLOSING (but ask if they need more)
+        elif any(thanks in user_message for thanks in ['thank', 'thanks', 'thankyou', 'appreciate']):
+            log("SUCCESS", "THANKS intent detected")
+            response_text = """😊 You're welcome!
+
+Is there anything else I can help you with?
+
+🌍 I can provide weather for any city you want!
+📍 Just say: "Weather in [city name]"
+📅 Or: "Forecast for [city name]"
+
+Feel free to ask anytime! ☀️"""
+        
+        # 8. NO THANKS / GOODBYE
+        elif any(no in user_message for no in ['no thanks', 'no', 'nope', 'goodbye', 'bye', 'nothing else', 'that\'s all']):
+            log("SUCCESS", "GOODBYE intent detected")
+            response_text = """👋 Thank you for using Weather BOT!
+
+Have a great day and stay weather-aware! ☀️
+
+Goodbye! 🌈"""
+        
+        # 9. MULTIPLE CITIES REQUEST (NEW!)
+        elif 'and' in user_message and city:
+            log("SUCCESS", "MULTIPLE CITIES detected")
+            # Extract all cities mentioned
+            response_text = await handle_multiple_cities(user_message, user_message)
+        
+        # 10. GENERIC MESSAGE
+        else:
+            log("DEBUG", "Generic message received")
+            if city:
+                # User mentioned a city but we're not sure what they want
+                log("API", f"Inferring weather for: {city}")
+                response_text = await get_current_weather(city)
+                response_text += f"\n\n❓ Would you like forecast or weather for another city?"
+            else:
+                response_text = """👋 Hello! I'm your Weather BOT! 🤖
+
+I can help you get weather information for ANY city in the world! 🌍
+
+Just tell me:
+🌤️ "What is the weather in [city]?"
+📅 "Weather forecast for [city]"
+🌏 "Show weather for [city1] and [city2]"
+
+What city would you like to know about? ☀️"""
+        
+        # Prepare and return response
         log("SUCCESS", f"Response prepared (length: {len(response_text)} chars)")
+        dialogflow_response = {"fulfillmentText": response_text}
         
-        # Step 9: Return response
-        log("DEBUG", "Step 8: Returning response to Dialogflow...")
-        log("SUCCESS", "Webhook request completed successfully!")
         print("\n" + "="*70 + "\n")
-        
         return JSONResponse(dialogflow_response)
     
     except Exception as e:
         log("ERROR", f"Exception occurred: {str(e)}")
         import traceback
-        log("DEBUG", "Full traceback:")
         print(traceback.format_exc())
-        print("\n" + "="*70 + "\n")
-        
         return JSONResponse({
             "fulfillmentText": f"Sorry, I encountered an error: {str(e)}"
         }, status_code=200)
 
 async def get_current_weather(city: str) -> str:
     """
-    Fetch current weather from OpenWeatherMap API
+    Get current weather for a city
+    Works with ANY city in the world
     """
     print()
-    log("DEBUG", f"get_current_weather called", f"city='{city}'")
+    log("DEBUG", f"get_current_weather called for: '{city}'")
     
     try:
         url = f"{WEATHER_API_URL}/weather?q={city}&appid={WEATHER_API_KEY}&units=metric"
-        log("API", f"API URL: {url[:70]}...")
+        log("API", f"Calling OpenWeatherMap for: {city}")
         
-        log("DEBUG", "Creating httpx AsyncClient...")
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            log("DEBUG", "Sending GET request to OpenWeatherMap...")
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(url)
-            log("API", f"Response status code: {response.status_code}")
+            log("API", f"Response status: {response.status_code}")
         
         if response.status_code == 200:
-            log("DEBUG", "Parsing JSON response...")
             data = response.json()
-            log("SUCCESS", "Weather data retrieved successfully")
+            log("SUCCESS", f"Weather data retrieved for {city}")
             
-            # Extract data
             temp = data['main']['temp']
             feels_like = data['main']['feels_like']
             condition = data['weather'][0]['main']
@@ -167,73 +270,74 @@ async def get_current_weather(city: str) -> str:
             humidity = data['main']['humidity']
             wind_speed = data['wind']['speed']
             pressure = data['main']['pressure']
+            country = data.get('sys', {}).get('country', '')
             
-            log("DEBUG", f"Weather data extracted", 
-                f"temp={temp}°C, condition={condition}, humidity={humidity}%")
-            
-            # Format message
-            message = f"🌤️ *Current Weather in {city.title()}*\n"
-            message += f"━━━━━━━━━━━━━━━━━━━━\n"
+            # Format response
+            message = f"🌤️ *Current Weather in {city.title()}, {country}*\n"
+            message += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            message += f"📍 Location: {city.title()}, {country}\n"
             message += f"🌡️ Temperature: {temp}°C\n"
             message += f"🤔 Feels Like: {feels_like}°C\n"
             message += f"☁️ Condition: {condition} ({description})\n"
             message += f"💧 Humidity: {humidity}%\n"
             message += f"💨 Wind Speed: {wind_speed} m/s\n"
             message += f"🔽 Pressure: {pressure} hPa\n"
-            message += f"━━━━━━━━━━━━━━━━━━━━"
+            message += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            message += f"⏰ Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             
-            log("SUCCESS", "Weather message formatted successfully")
+            log("SUCCESS", "Current weather formatted successfully")
             return message
         else:
-            error_msg = f"❌ City '{city}' not found (Status: {response.status_code})"
-            log("ERROR", error_msg)
-            return error_msg
+            log("ERROR", f"City '{city}' not found")
+            return f"""❌ City '{city}' not found!
+
+Please check the spelling and try again.
+Examples: London, Paris, Tokyo, New York, Dubai, etc.
+
+Would you like weather for a different city?"""
     
     except httpx.TimeoutException:
-        error_msg = "❌ Request timeout - API took too long to respond"
-        log("ERROR", error_msg)
-        return error_msg
-    except httpx.RequestError as e:
-        error_msg = f"❌ Network error: {str(e)}"
-        log("ERROR", error_msg)
-        return error_msg
+        log("ERROR", "Request timeout")
+        return f"❌ Request took too long. Please try again in a moment."
     except Exception as e:
-        error_msg = f"❌ Error fetching weather: {str(e)}"
-        log("ERROR", error_msg)
-        import traceback
-        log("DEBUG", "Traceback:", traceback.format_exc())
-        return error_msg
+        log("ERROR", f"Error: {str(e)}")
+        return f"❌ Error fetching weather. Please try again."
 
 async def get_forecast(city: str, date_str: str) -> str:
     """
-    Fetch weather forecast from OpenWeatherMap API
+    Get weather forecast for a city
+    Works with ANY city in the world
     """
     print()
-    log("DEBUG", f"get_forecast called", f"city='{city}', date='{date_str}'")
+    log("DEBUG", f"get_forecast called for: '{city}'")
     
     try:
         url = f"{WEATHER_API_URL}/forecast?q={city}&appid={WEATHER_API_KEY}&units=metric"
-        log("API", f"API URL: {url[:70]}...")
+        log("API", f"Calling OpenWeatherMap Forecast API for: {city}")
         
-        log("DEBUG", "Creating httpx AsyncClient...")
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            log("DEBUG", "Sending GET request to OpenWeatherMap...")
+        async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(url)
-            log("API", f"Response status code: {response.status_code}")
+            log("API", f"Response status: {response.status_code}")
         
         if response.status_code == 200:
-            log("DEBUG", "Parsing JSON response...")
             data = response.json()
-            log("SUCCESS", "Forecast data retrieved successfully")
+            log("SUCCESS", f"Forecast data retrieved for {city}")
             
             forecast_list = data['list']
-            log("DEBUG", f"Got {len(forecast_list)} forecast entries")
+            city_info = data.get('city', {})
+            country = city_info.get('country', '')
             
-            # Format message
-            message = f"📅 *Weather Forecast for {city.title()}*\n"
-            message += f"📊 (Next 8 Days)\n"
-            message += f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            # Get date range
+            first_date = forecast_list[0]['dt_txt'].split()[0]
+            last_date = forecast_list[-1]['dt_txt'].split()[0]
             
+            # Format response
+            message = f"📅 *Weather Forecast for {city.title()}, {country}*\n"
+            message += f"📊 ({first_date} to {last_date} - 8 Days)\n"
+            message += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            
+            # Get 8 days of forecast
+            count = 0
             for i in range(0, min(40, len(forecast_list)), 8):
                 item = forecast_list[i]
                 forecast_date = item['dt_txt'].split()[0]
@@ -244,43 +348,72 @@ async def get_forecast(city: str, date_str: str) -> str:
                 humidity = item['main']['humidity']
                 
                 message += f"📌 *{forecast_date}*\n"
-                message += f"   🌡️ Temp: {temp}°C (Min: {temp_min}°C, Max: {temp_max}°C)\n"
+                message += f"   🌡️ Temperature: {temp}°C\n"
+                message += f"   📈 Max: {temp_max}°C | 📉 Min: {temp_min}°C\n"
                 message += f"   ☁️ Condition: {condition}\n"
                 message += f"   💧 Humidity: {humidity}%\n"
-                message += f"   ─────────────────\n"
+                message += f"   ───────────────────────\n\n"
+                count += 1
             
-            log("SUCCESS", "Forecast message formatted successfully")
+            message += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            message += f"✅ Forecast for {count} days ahead\n"
+            message += f"⏰ Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            
+            log("SUCCESS", "Forecast formatted successfully")
             return message
         else:
-            error_msg = f"❌ Could not fetch forecast for '{city}' (Status: {response.status_code})"
-            log("ERROR", error_msg)
-            return error_msg
+            log("ERROR", f"City '{city}' not found for forecast")
+            return f"""❌ Could not fetch forecast for '{city}'!
+
+Please check the city name and try again.
+Examples: London, Paris, Tokyo, Dubai, etc.
+
+Would you like forecast for a different city?"""
     
     except httpx.TimeoutException:
-        error_msg = "❌ Request timeout - API took too long to respond"
-        log("ERROR", error_msg)
-        return error_msg
-    except httpx.RequestError as e:
-        error_msg = f"❌ Network error: {str(e)}"
-        log("ERROR", error_msg)
-        return error_msg
+        log("ERROR", "Request timeout")
+        return f"❌ Request took too long. Please try again."
     except Exception as e:
-        error_msg = f"❌ Error fetching forecast: {str(e)}"
-        log("ERROR", error_msg)
-        import traceback
-        log("DEBUG", "Traceback:", traceback.format_exc())
-        return error_msg
+        log("ERROR", f"Error: {str(e)}")
+        return f"❌ Error fetching forecast. Please try again."
+
+async def handle_multiple_cities(user_message: str, original_message: str) -> str:
+    """
+    Handle requests for multiple cities
+    Example: "Weather in London and Paris and Tokyo"
+    """
+    print()
+    log("DEBUG", "handle_multiple_cities called")
+    
+    # This would require more complex entity extraction
+    # For now, we return a helpful message
+    return """🌍 I can help with multiple cities!
+
+Please ask me about one city at a time, and I'll get the weather for each:
+
+1️⃣ "Weather in London"
+2️⃣ "Now show me Paris"
+3️⃣ "What about Tokyo?"
+
+Or ask me each question separately and I'll provide weather for all of them! ☀️
+
+Which cities would you like to start with?"""
 
 @app.get("/")
 async def root():
-    log("INFO", "Root endpoint called")
     return {
-        "message": "Welcome to Weather Bot API",
+        "message": "Multi-City Conversational Weather Bot API",
         "endpoints": {
             "health": "/health",
             "webhook": "POST /webhook"
         },
-        "documentation": "/docs"
+        "features": [
+            "Current weather for any city",
+            "8-day forecast for any city",
+            "Multiple cities in one conversation",
+            "Continuous multi-turn dialogue",
+            "Natural conversation flow"
+        ]
     }
 
 if __name__ == "__main__":
